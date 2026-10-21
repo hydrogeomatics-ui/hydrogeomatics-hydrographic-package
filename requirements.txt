@@ -1,0 +1,10 @@
+PyQt6
+pyqtgraph
+numpy
+pyserial
+pyproj
+ezdxf
+matplotlib
+utide
+sonarlight
+pandas

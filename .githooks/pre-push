@@ -1,0 +1,5 @@
+#!/bin/sh
+# Block pushes whose working tree/index do not match the reviewed HEAD.
+git diff --quiet && git diff --cached --quiet || exit 1
+python scripts/check_publication.py || exit 1
+# This hook validates the current snapshot. Use GitHub push protection for history.
