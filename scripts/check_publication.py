@@ -8,7 +8,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {
     '.gitignore', '.gitattributes', 'README.md', 'SECURITY.md', 'requirements.txt',
-    'lowrance_converter.py', 'scripts/check_publication.py',
+    'hydrographic_package.py', 'scripts/check_publication.py',
+    'LICENSE', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
+    '.github/PULL_REQUEST_TEMPLATE.md',
+    '.github/ISSUE_TEMPLATE/bug_report.yml',
+    '.github/ISSUE_TEMPLATE/feature_request.yml',
     '.githooks/pre-commit', '.githooks/pre-push',
     '.github/workflows/security.yml',
 } | {f'modules/{name}.py' for name in (
