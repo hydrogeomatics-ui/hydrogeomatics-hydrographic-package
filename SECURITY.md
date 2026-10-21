@@ -11,3 +11,7 @@ GitHub guidance: https://docs.github.com/en/code-security/how-tos/secure-your-se
 The retained protected-file format uses a deterministic key derived from public application values and XOR. Treat that format as obfuscation, not confidentiality protection. No protected payloads are distributed here.
 
 If a credential is ever published, revoke or rotate it immediately. Removing a file from the latest commit does not remove it from history, forks, or existing clones. Review every outgoing commit before pushing.
+
+## Report a vulnerability privately
+
+Use **Security > Report a vulnerability** in the GitHub repository to submit a private advisory. Do not open a public issue containing an exploit, credentials, or private data. Provide a minimal synthetic reproduction and affected commit/version. There is no guaranteed response time. For an exposed credential, revoke or rotate it immediately.

@@ -1,0 +1,26 @@
+name: Feature or documentation request
+description: Propose a useful workflow, improvement, or learning resource.
+title: "[Idea]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Use synthetic examples. Never include client information, private survey locations, or credentials."
+  - type: textarea
+    id: need
+    attributes:
+      label: What problem would this solve?
+      description: Explain who needs it and their workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Describe desired behavior, alternatives, and validation approach.
+    validations:
+      required: true
+  - type: textarea
+    id: contribution
+    attributes:
+      label: How could you help?
+      description: Testing, domain knowledge, documentation, or code; optional.

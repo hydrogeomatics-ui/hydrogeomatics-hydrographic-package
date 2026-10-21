@@ -13139,49 +13139,49 @@ def run_gui() -> int:
         processor_output_var = tk.StringVar(value=str(paths["exports"]))
         professional_log = tk.Text(professional_tab, height=10, wrap="word", bg="#f8fafc", fg="#111827")
 
-        # Lowrance SL2/SL3 conversion utility. The optional sonarlight package
+        # Recorded sonar SL2/SL3 conversion utility. The optional sonarlight package
         # decodes the vendor's binary recording format; original files are never modified.
-        lowrance_frame = ttk.LabelFrame(professional_tab, text="Lowrance recorded sonar conversion (.SL2 / .SL3)", padding=8)
-        lowrance_frame.pack(fill="x", pady=(0, 8))
-        lowrance_input_var = tk.StringVar(value="")
-        lowrance_output_var = tk.StringVar(value=str(paths["exports"] / "lowrance_soundings.csv"))
-        lowrance_channel_var = tk.StringVar(value="primary")
-        lowrance_status_var = tk.StringVar(value="Select a recorded Lowrance file. Exports GPS coordinates and recorded water depth to CSV.")
+        recorded_sonar_frame = ttk.LabelFrame(professional_tab, text="Recorded sonar recorded sonar conversion (.SL2 / .SL3)", padding=8)
+        recorded_sonar_frame.pack(fill="x", pady=(0, 8))
+        recorded_sonar_input_var = tk.StringVar(value="")
+        recorded_sonar_output_var = tk.StringVar(value=str(paths["exports"] / "recorded_sonar_soundings.csv"))
+        recorded_sonar_channel_var = tk.StringVar(value="primary")
+        recorded_sonar_status_var = tk.StringVar(value="Select a recorded Recorded sonar file. Exports GPS coordinates and recorded water depth to CSV.")
 
-        def browse_lowrance_input() -> None:
+        def browse_recorded_sonar_input() -> None:
             name = filedialog.askopenfilename(
-                title="Select Lowrance recorded sonar file",
+                title="Select Recorded sonar recorded sonar file",
                 initialdir=str(paths["raw"]),
-                filetypes=[("Lowrance sonar recordings", "*.sl2 *.sl3"), ("All files", "*.*")],
+                filetypes=[("Recorded sonar sonar recordings", "*.sl2 *.sl3"), ("All files", "*.*")],
                 parent=win,
             )
             if name:
-                lowrance_input_var.set(name)
-                lowrance_output_var.set(str(Path(name).with_suffix(".soundings.csv")))
+                recorded_sonar_input_var.set(name)
+                recorded_sonar_output_var.set(str(Path(name).with_suffix(".soundings.csv")))
 
-        def browse_lowrance_output() -> None:
+        def browse_recorded_sonar_output() -> None:
             name = filedialog.asksaveasfilename(
-                title="Save converted Lowrance sounding CSV",
+                title="Save converted Recorded sonar sounding CSV",
                 defaultextension=".csv",
                 initialdir=str(paths["exports"]),
-                initialfile=Path(lowrance_output_var.get()).name or "lowrance_soundings.csv",
+                initialfile=Path(recorded_sonar_output_var.get()).name or "recorded_sonar_soundings.csv",
                 filetypes=[("CSV sounding file", "*.csv")],
                 parent=win,
             )
             if name:
-                lowrance_output_var.set(name)
+                recorded_sonar_output_var.set(name)
 
-        def convert_lowrance_recording() -> None:
-            source = Path(lowrance_input_var.get().strip())
-            target = Path(lowrance_output_var.get().strip())
+        def convert_recorded_sonar_recording() -> None:
+            source = Path(recorded_sonar_input_var.get().strip())
+            target = Path(recorded_sonar_output_var.get().strip())
             if not source.is_file():
-                messagebox.showwarning("Lowrance conversion", "Select an existing .SL2 or .SL3 recording first.", parent=win)
+                messagebox.showwarning("Recorded sonar conversion", "Select an existing .SL2 or .SL3 recording first.", parent=win)
                 return
             if source.suffix.lower() not in {".sl2", ".sl3"}:
-                messagebox.showwarning("Lowrance conversion", "Only Lowrance .SL2 and .SL3 recordings are accepted.", parent=win)
+                messagebox.showwarning("Recorded sonar conversion", "Only Recorded sonar .SL2 and .SL3 recordings are accepted.", parent=win)
                 return
             if not str(target).strip() or target.suffix.lower() != ".csv":
-                messagebox.showwarning("Lowrance conversion", "Choose a CSV output path.", parent=win)
+                messagebox.showwarning("Recorded sonar conversion", "Choose a CSV output path.", parent=win)
                 return
             try:
                 from sonarlight import Sonar
@@ -13205,11 +13205,11 @@ def run_gui() -> int:
                 depth_col = find_column(("water_depth", "depth", "depth_m", "waterdepth"))
                 channel_col = find_column(("survey", "channel", "channel_name"), required=False)
                 time_col = find_column(("time", "datetime", "timestamp", "time_utc", "utc_time", "date_time"), required=False)
-                selected_channel = lowrance_channel_var.get().strip().lower()
+                selected_channel = recorded_sonar_channel_var.get().strip().lower()
                 if channel_col is not None and selected_channel != "all channels":
                     frame = frame[frame[channel_col].astype(str).str.strip().str.lower() == selected_channel]
                 if frame.empty:
-                    raise ValueError(f"No records found for channel '{lowrance_channel_var.get()}'. Try All channels or another channel.")
+                    raise ValueError(f"No records found for channel '{recorded_sonar_channel_var.get()}'. Try All channels or another channel.")
 
                 import pandas as _pd
                 lat = _pd.to_numeric(frame[lat_col], errors="coerce")
@@ -13237,26 +13237,26 @@ def run_gui() -> int:
                             "" if time_value is None else str(time_value),
                             str(channel_value),
                         ])
-                lowrance_status_var.set(f"Converted {len(frame):,} valid sounding records to {target}")
-                professional_append(f"Lowrance {source.suffix.upper()} converted: {len(frame):,} valid soundings -> {target}")
-                messagebox.showinfo("Lowrance conversion complete", f"Exported {len(frame):,} valid records.\n\n{target}\n\nCoordinates remain latitude/longitude in decimal degrees; depth is in metres as decoded by the library.", parent=win)
+                recorded_sonar_status_var.set(f"Converted {len(frame):,} valid sounding records to {target}")
+                professional_append(f"Recorded sonar {source.suffix.upper()} converted: {len(frame):,} valid soundings -> {target}")
+                messagebox.showinfo("Recorded sonar conversion complete", f"Exported {len(frame):,} valid records.\n\n{target}\n\nCoordinates remain latitude/longitude in decimal degrees; depth is in metres as decoded by the library.", parent=win)
             except ImportError as exc:
-                messagebox.showerror("Lowrance conversion dependency missing", "Install the Lowrance decoder and its dependencies, then restart HYDROGEOMATICS:\n\npython -m pip install sonarlight pandas numpy\n\n" + str(exc), parent=win)
+                messagebox.showerror("Recorded sonar conversion dependency missing", "Install the Recorded sonar decoder and its dependencies, then restart HYDROGEOMATICS:\n\npython -m pip install sonarlight pandas numpy\n\n" + str(exc), parent=win)
             except Exception as exc:
-                lowrance_status_var.set(f"Conversion failed: {exc}")
-                messagebox.showerror("Lowrance conversion failed", f"Could not convert this recording. The file may use an unsupported device variant or contain damaged records.\n\n{exc}", parent=win)
+                recorded_sonar_status_var.set(f"Conversion failed: {exc}")
+                messagebox.showerror("Recorded sonar conversion failed", f"Could not convert this recording. The file may use an unsupported device variant or contain damaged records.\n\n{exc}", parent=win)
 
-        ttk.Label(lowrance_frame, text="Recorded file").grid(row=0, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(lowrance_frame, textvariable=lowrance_input_var).grid(row=0, column=1, sticky="ew", padx=4, pady=3)
-        ttk.Button(lowrance_frame, text="Browse SL2/SL3", command=browse_lowrance_input).grid(row=0, column=2, padx=4, pady=3)
-        ttk.Label(lowrance_frame, text="Output CSV").grid(row=1, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(lowrance_frame, textvariable=lowrance_output_var).grid(row=1, column=1, sticky="ew", padx=4, pady=3)
-        ttk.Button(lowrance_frame, text="Save As", command=browse_lowrance_output).grid(row=1, column=2, padx=4, pady=3)
-        ttk.Label(lowrance_frame, text="Sonar channel").grid(row=2, column=0, sticky="w", padx=4, pady=3)
-        ttk.Combobox(lowrance_frame, textvariable=lowrance_channel_var, values=["primary", "secondary", "downscan", "sidescan", "all channels"], state="readonly", width=18).grid(row=2, column=1, sticky="w", padx=4, pady=3)
-        ttk.Button(lowrance_frame, text="Convert to CSV", command=convert_lowrance_recording).grid(row=2, column=2, padx=4, pady=3)
-        ttk.Label(lowrance_frame, textvariable=lowrance_status_var, wraplength=980, justify="left").grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=(5, 2))
-        lowrance_frame.columnconfigure(1, weight=1)
+        ttk.Label(recorded_sonar_frame, text="Recorded file").grid(row=0, column=0, sticky="w", padx=4, pady=3)
+        ttk.Entry(recorded_sonar_frame, textvariable=recorded_sonar_input_var).grid(row=0, column=1, sticky="ew", padx=4, pady=3)
+        ttk.Button(recorded_sonar_frame, text="Browse SL2/SL3", command=browse_recorded_sonar_input).grid(row=0, column=2, padx=4, pady=3)
+        ttk.Label(recorded_sonar_frame, text="Output CSV").grid(row=1, column=0, sticky="w", padx=4, pady=3)
+        ttk.Entry(recorded_sonar_frame, textvariable=recorded_sonar_output_var).grid(row=1, column=1, sticky="ew", padx=4, pady=3)
+        ttk.Button(recorded_sonar_frame, text="Save As", command=browse_recorded_sonar_output).grid(row=1, column=2, padx=4, pady=3)
+        ttk.Label(recorded_sonar_frame, text="Sonar channel").grid(row=2, column=0, sticky="w", padx=4, pady=3)
+        ttk.Combobox(recorded_sonar_frame, textvariable=recorded_sonar_channel_var, values=["primary", "secondary", "downscan", "sidescan", "all channels"], state="readonly", width=18).grid(row=2, column=1, sticky="w", padx=4, pady=3)
+        ttk.Button(recorded_sonar_frame, text="Convert to CSV", command=convert_recorded_sonar_recording).grid(row=2, column=2, padx=4, pady=3)
+        ttk.Label(recorded_sonar_frame, textvariable=recorded_sonar_status_var, wraplength=980, justify="left").grid(row=3, column=0, columnspan=3, sticky="ew", padx=4, pady=(5, 2))
+        recorded_sonar_frame.columnconfigure(1, weight=1)
 
         internal_frame = ttk.LabelFrame(processor_tab, text="HYDROGEOMATICS internal MBES processor - beam decoding, TPU, cleaning, certification", padding=8)
         internal_frame.pack(fill="x", pady=(0, 8))

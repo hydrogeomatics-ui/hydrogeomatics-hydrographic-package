@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible issue using safe synthetic examples.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Never include client data, sensitive coordinates, credentials, or unredacted logs/screenshots. Use synthetic examples. For security reports, read SECURITY.md."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, commit/version, relevant dependency versions.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal synthetic example; describe units and CRS/datums when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized error text
+    validations:
+      required: true

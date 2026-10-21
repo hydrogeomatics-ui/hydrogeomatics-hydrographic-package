@@ -7,9 +7,9 @@ are served by native Qt implementations, without launching Tk or an external fil
 The newer map/CAD/KTD interface shares the survey session and HYPACK writer.
 
 Install: python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
-Run:     python "lowrance_converter.py"
-CLI:     python "lowrance_converter.py" --help
-Dredge:  python "lowrance_converter.py" --dredge-volume
+Run:     python "hydrographic_package.py"
+CLI:     python "hydrographic_package.py" --help
+Dredge:  python "hydrographic_package.py" --dredge-volume
 Added:   embedded DREDGE VOLUME with mouse-based channel design.
 """
 from __future__ import annotations
