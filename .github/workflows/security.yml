@@ -9,3 +9,5 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Check tracked content and Python syntax
         run: python3 scripts/check_publication.py
+      - name: Check source bundle startup
+        run: python3 -m unittest discover -s tests -v

@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {
     '.gitignore', '.gitattributes', 'README.md', 'SECURITY.md', 'requirements.txt',
     'hydrographic_package.py', 'scripts/check_publication.py',
+    'start_windows.cmd', 'tests/test_source_bundle.py',
     'LICENSE', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
     '.github/PULL_REQUEST_TEMPLATE.md',
     '.github/ISSUE_TEMPLATE/bug_report.yml',

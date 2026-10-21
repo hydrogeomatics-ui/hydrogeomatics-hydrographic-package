@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""HYDROGEOMATICS HYDROGEOMATICS — standalone merged PyQt6 survey application.
+"""HYDROGEOMATICS — community hydrographic desktop package.
 
-Source inputs: 0701.py and sept102026.py, supplied by the user.
-All survey workflows are retained in an isolated module; its widget imports
-are served by native Qt implementations, without launching Tk or an external file.
-The newer map/CAD/KTD interface shares the survey session and HYPACK writer.
+Download and extract the entire repository ZIP, including the modules folder.
+This launcher is not a standalone download. Run it from the extracted package.
 
 Install: python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
 Run:     python "hydrographic_package.py"
@@ -18,6 +16,27 @@ import sys
 import types
 import os
 from pathlib import Path
+
+def _check_source_bundle():
+    required = (
+        'qt_widget_source.py', 'survey_source.py', 'map_source.py',
+        'engine_source.py', 'indus_ktd_source.py', 'chart_plot_source.py',
+        'enc_editor_source.py', 'dredge_volume_source.py', 'hydro_tide_payload.py',
+    )
+    folder = Path(__file__).resolve().parent / 'modules'
+    missing = [name for name in required if not (folder / name).is_file()]
+    if missing:
+        raise SystemExit(
+            'HYDROGEOMATICS download is incomplete.\n'
+            'The launcher needs the modules folder beside it.\n'
+            'Download the full package:\n'
+            'https://github.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/archive/refs/heads/main.zip\n'
+            'Extract ALL files, then run hydrographic_package.py from that folder.\n'
+            'On Windows, you can also double-click start_windows.cmd.\n'
+            'Missing modules: ' + ', '.join(missing)
+        )
+
+_check_source_bundle()
 
 def _module(name, source, widget_module=None):
     module=types.ModuleType(name)

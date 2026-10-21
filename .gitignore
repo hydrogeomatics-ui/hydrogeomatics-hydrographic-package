@@ -6,6 +6,9 @@
 !/SECURITY.md
 !/requirements.txt
 !/hydrographic_package.py
+!/start_windows.cmd
+!/tests/
+!/tests/test_source_bundle.py
 !/modules/
 !/modules/*.py
 !/scripts/
