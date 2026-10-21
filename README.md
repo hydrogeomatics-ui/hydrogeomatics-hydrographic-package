@@ -39,7 +39,11 @@ Embedded geographic reference datasets and protected map resources are excluded 
 
 ## Get started
 
+**Download the full package:** [Download ZIP](https://github.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/archive/refs/heads/main.zip), then **extract all files**. Keep `hydrographic_package.py`, `requirements.txt`, and the `modules` folder together. Downloading just the Python launcher will not work. Run from the extracted folder, not from inside the ZIP viewer.
+
 Use Python 3.10 or newer and Git. The desktop interface uses PyQt6. The public distribution has not yet been validated across all operating systems.
+
+Git is only needed for the clone method below; ZIP downloads do not require Git. Open a terminal in the extracted folder and follow the virtual-environment and installation steps. After setup, Windows users can double-click `start_windows.cmd`; it keeps startup errors visible.
 
 ```sh
 git clone https://github.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package.git
@@ -68,6 +72,12 @@ python hydrographic_package.py
 ```
 
 The installation check verifies imports; it does not test instruments or validate results. Dependencies are not yet version locked. Some ENC workflows need additional system libraries such as GDAL.
+
+### Startup troubleshooting
+
+- **Download is incomplete / missing modules:** extract the complete ZIP and keep its folder structure intact.
+- **Missing dependency / `ModuleNotFoundError`:** activate the intended environment and run `python -m pip install -r requirements.txt` using that same Python.
+- **The window closes immediately on Windows:** use `start_windows.cmd` or run `python hydrographic_package.py` in a terminal to read the error.
 
 To convert recorded sonar, find **Recorded sonar conversion (.SL2 / .SL3)** under **Professional Processing**, select a recording and output CSV, and choose the relevant channel. Device variants and damaged recordings may not decode successfully.
 
