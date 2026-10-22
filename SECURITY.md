@@ -4,6 +4,8 @@ Only the reviewed code and configuration files belong in this repository. Never 
 
 The local scanner checks the Git index, including Python string literals, for selected credential and personal-information patterns. It blocks large embedded strings and non-allowlisted files. Hooks must be enabled after every clone and can be bypassed; CI detects a problem only after content has reached GitHub. These controls cannot guarantee the absence of sensitive information.
 
+The generated versioned single-file edition is permitted only when it exactly matches a deterministic bundle of the indexed public launcher and modules. Its source inputs undergo the normal checks. This exception does not permit arbitrary embedded data or changes to the generated file; rebuild it after changing reviewed source modules.
+
 Before the first push, verify that GitHub secret scanning and push protection are enabled. Require the Publication safeguards check through a branch ruleset where the account supports it. GitHub credential detection does not identify every form of private survey or geographic data.
 
 GitHub guidance: https://docs.github.com/en/code-security/how-tos/secure-your-secrets/detect-secret-leaks/enable-secret-scanning

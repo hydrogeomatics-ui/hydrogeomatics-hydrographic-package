@@ -22,6 +22,8 @@ The `review` CI check is required on the protected main branch. A passing public
 
 ## Adding files safely
 
+The versioned single-file edition is generated, not edited directly. After changing the launcher or a source module, run `python scripts/check_publication.py --build-single-file`, stage the result, and run the normal publication check. The scanner verifies that the indexed single-file content exactly matches the indexed public modules; large embedded strings remain blocked in other files.
+
 The default-deny `.gitignore` and exact `ALLOWED` list in `scripts/check_publication.py` restrict tracked files. For a legitimate new source, documentation, or synthetic test file, add its exact path to both controls in the same pull request and explain why it is safe to publish. Do not allow all data files, binary archives, or an entire directory. Never reintroduce opaque embedded datasets or the original merged script.
 
 Keep local datasets and output outside the checkout. Enable hooks after each clone. Review the diff and every outgoing commit; CI runs after the upload reaches GitHub.
