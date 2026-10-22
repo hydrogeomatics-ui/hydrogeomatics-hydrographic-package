@@ -39,6 +39,21 @@ Embedded geographic reference datasets and protected map resources are excluded 
 
 ## Get started
 
+### Single-file download: version 22 OCT 2026
+
+**[Download Hydrogeomatics version 22 OCT 2026.py](https://raw.githubusercontent.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/main/Hydrogeomatics%20version%2022%20OCT%202026.py)** (save the linked content as a `.py` file).
+
+This edition contains all reviewed public source modules in one readable Python file. It does **not** need the separate `modules` folder. Python and the runtime dependencies are still required:
+
+```sh
+python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
+python "Hydrogeomatics version 22 OCT 2026.py"
+```
+
+The single-file edition preserves the public distribution's data exclusions: embedded reference datasets are omitted and the Indus reference-data editor and tide/astronomy module remain disabled. It is generated from the modular source below, rather than distributing the unreviewed original merged file. Existing local settings remain usable by the application; private settings are not uploaded to this repository.
+
+### Full source package for contributors
+
 **Download the full package:** [Download ZIP](https://github.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/archive/refs/heads/main.zip), then **extract all files**. Keep `hydrographic_package.py`, `requirements.txt`, and the `modules` folder together. Downloading just the Python launcher will not work. Run from the extracted folder, not from inside the ZIP viewer.
 
 Use Python 3.10 or newer and Git. The desktop interface uses PyQt6. The public distribution has not yet been validated across all operating systems.

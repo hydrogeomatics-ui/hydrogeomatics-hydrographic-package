@@ -6,9 +6,11 @@
 !/SECURITY.md
 !/requirements.txt
 !/hydrographic_package.py
+!/Hydrogeomatics version 22 OCT 2026.py
 !/start_windows.cmd
 !/tests/
 !/tests/test_source_bundle.py
+!/tests/test_single_file.py
 !/modules/
 !/modules/*.py
 !/scripts/
