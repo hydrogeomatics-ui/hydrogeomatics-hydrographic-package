@@ -230,9 +230,10 @@ class Widget:
         elif hasattr(self.q,'setText'):self.q.setText(str(v))
         self.q.blockSignals(False)
     def _layout(self,kind):
-        layout=self.q.layout()
+        target=getattr(self.q,'_window_manager_content',self.q)
+        layout=target.layout()
         if layout is None:
-            layout=QW.QGridLayout(self.q) if kind=='grid' else PackLayout(self.q)
+            layout=QW.QGridLayout(target) if kind=='grid' else PackLayout(target)
             layout.setContentsMargins(5,5,5,5);layout.setSpacing(4)
         return layout
     def pack(self,**kw):
@@ -247,7 +248,9 @@ class Widget:
         else:lay.addPacked(self.q,{'fill':'both','expand':True})
         self.q.show()
     def pack_forget(self):
-        if self.master and self.master.q.layout():self.master.q.layout().removeWidget(self.q)
+        if self.master:
+            target=getattr(self.master.q,'_window_manager_content',self.master.q)
+            if target.layout():target.layout().removeWidget(self.q)
         self.q.hide()
     grid_forget=pack_forget
     def columnconfigure(self,col,weight=0,**kw):

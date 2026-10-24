@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""HYDROGEOMATICS — community hydrographic desktop package.
+"""HYDROGEOMATICS HYDROGEOMATICS — standalone merged PyQt6 survey application.
 
-Download and extract the entire repository ZIP, including the modules folder.
-This launcher is not a standalone download. Run it from the extracted package.
+Source inputs: 0701.py and sept102026.py, supplied by the user.
+All survey workflows are retained in an isolated module; its widget imports
+are served by native Qt implementations, without launching Tk or an external file.
+The newer map/CAD/KTD interface shares the survey session and HYPACK writer.
 
 Install: python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
 Run:     python "hydrographic_package.py"
@@ -16,7 +18,6 @@ import sys
 import types
 import os
 from pathlib import Path
-
 def _check_source_bundle():
     required = (
         'qt_widget_source.py', 'survey_source.py', 'map_source.py',
@@ -38,6 +39,7 @@ def _check_source_bundle():
 
 _check_source_bundle()
 
+
 def _module(name, source, widget_module=None):
     module=types.ModuleType(name)
     module.__file__=__file__
@@ -55,21 +57,21 @@ def _module(name, source, widget_module=None):
 
 
 # === QT_WIDGET_SOURCE: retained source, one string literal per source line ===
-QT_WIDGET_SOURCE = (Path(__file__).resolve().parent / "modules" / "qt_widget_source.py").read_text(encoding="utf-8")
+QT_WIDGET_SOURCE = (Path(__file__).resolve().parent / "modules/qt_widget_source.py").read_text(encoding="utf-8")
 
 # === SURVEY_SOURCE: retained source, one string literal per source line ===
-SURVEY_SOURCE = (Path(__file__).resolve().parent / "modules" / "survey_source.py").read_text(encoding="utf-8")
+SURVEY_SOURCE = (Path(__file__).resolve().parent / "modules/survey_source.py").read_text(encoding="utf-8")
 
 # === MAP_SOURCE: retained source, one string literal per source line ===
-MAP_SOURCE = (Path(__file__).resolve().parent / "modules" / "map_source.py").read_text(encoding="utf-8")
+MAP_SOURCE = (Path(__file__).resolve().parent / "modules/map_source.py").read_text(encoding="utf-8")
 
 # === ENGINE_SOURCE: retained source, one string literal per source line ===
-ENGINE_SOURCE = (Path(__file__).resolve().parent / "modules" / "engine_source.py").read_text(encoding="utf-8")
+ENGINE_SOURCE = (Path(__file__).resolve().parent / "modules/engine_source.py").read_text(encoding="utf-8")
 
-INDUS_KTD_SOURCE = (Path(__file__).resolve().parent / "modules" / "indus_ktd_source.py").read_text(encoding="utf-8")
-CHART_PLOT_SOURCE = (Path(__file__).resolve().parent / "modules" / "chart_plot_source.py").read_text(encoding="utf-8")
+INDUS_KTD_SOURCE = (Path(__file__).resolve().parent / "modules/indus_ktd_source.py").read_text(encoding="utf-8")
+CHART_PLOT_SOURCE = (Path(__file__).resolve().parent / "modules/chart_plot_source.py").read_text(encoding="utf-8")
 
-ENC_EDITOR_SOURCE = (Path(__file__).resolve().parent / "modules" / "enc_editor_source.py").read_text(encoding="utf-8")
+ENC_EDITOR_SOURCE = (Path(__file__).resolve().parent / "modules/enc_editor_source.py").read_text(encoding="utf-8")
 
 def load_components():
     try:
@@ -1279,6 +1281,14 @@ def create_window(app, components=None, testing=False, project=None):
     window=MergedWindow()
     # Native Qt callbacks retain references to all windows via their parents.
     window._components=(widgets,core,modern,engine,acq)
+    filter_menu=window.menuBar().addMenu('Input Filtering')
+    filter_action=G.QAction('Depth / GNSS filter settings and preservation policy',window)
+    filter_action.triggered.connect(lambda:engine.show_filter_settings(window,acq))
+    filter_menu.addAction(filter_action)
+    window._responsive_navigation=ResponsiveNavigationLayout(window)
+    window._logging_notice=MapLoggingNotice(window)
+    window._xyz_annotations=XYZAnnotations(window,modern)
+    window._window_manager=SurveyWindowManager(window)
     return hydro_attach_tides(window)
 
 def check_install():
@@ -1330,7 +1340,7 @@ def install_qt_diagnostics():
     QtCore.qInstallMessageHandler(message)
     print('Qt diagnostic log:',folder/'qt-runtime.log')
 
-DREDGE_VOLUME_SOURCE = (Path(__file__).resolve().parent / "modules" / "dredge_volume_source.py").read_text(encoding="utf-8")
+DREDGE_VOLUME_SOURCE = (Path(__file__).resolve().parent / "modules/dredge_volume_source.py").read_text(encoding="utf-8")
 
 def main():
     args=sys.argv[1:]
@@ -1388,7 +1398,7 @@ def main():
 
 # Embedded HYDROGEOMATICS tide, astronomy and harmonic-analysis module.
 import base64 as _hydro_b64, zlib as _hydro_zlib
-HYDRO_TIDE_PAYLOAD = (Path(__file__).resolve().parent / "modules" / "hydro_tide_payload.py").read_text(encoding="utf-8")
+HYDRO_TIDE_PAYLOAD = (Path(__file__).resolve().parent / "modules/hydro_tide_payload.py").read_text(encoding="utf-8")
 
 def hydro_tide_module():
     source=HYDRO_TIDE_PAYLOAD
@@ -1407,11 +1417,408 @@ def hydro_open_tides(window):
 
 def hydro_attach_tides(window):
     from PyQt6.QtGui import QAction
-    menu=window.menuBar().addMenu('HYDROGEOMATICS')
+    menu=window.menuBar().addMenu('Tides & Astronomy')
     action=QAction('Tides & Astronomy',window);action.triggered.connect(lambda:hydro_open_tides(window));menu.addAction(action)
     window._hydro_tide_action=action
     window.setWindowTitle('HYDROGEOMATICS')
     return window
+
+class XYZAnnotations:
+    """Survey map labels: X=easting, Y=northing, Z=corrected positive-down depth."""
+    def __init__(self, window, modern):
+        from PyQt6 import QtCore as C, QtGui as G
+        self.window=window;self.modern=modern;self.items=[];self.manual=[];self.cursor=None
+        self.enabled=True;self.mode='Distance';self.interval=10.0;self.decimals=2;self.font_size=9
+        self.signature=None;self.maximum=500
+        menu=window.menuBar().addMenu('XYZ Annotations')
+        for title,callback in [('Annotation options / interval',self.options),('Annotate nearest sounding at cursor (F5)',self.annotate),('Clear manual annotations',self.clear_manual)]:
+            action=G.QAction(title,window);action.triggered.connect(callback);menu.addAction(action)
+        self.shortcut=G.QShortcut(G.QKeySequence('F5'),window)
+        self.shortcut.setContext(C.Qt.ShortcutContext.WindowShortcut);self.shortcut.setAutoRepeat(False)
+        self.shortcut.activated.connect(self.annotate)
+        window.view.scene().sigMouseMoved.connect(self.mouse)
+        self.timer=C.QTimer(window);self.timer.timeout.connect(self.refresh);self.timer.start(750)
+    def mouse(self,pos):
+        view=self.window.view
+        if view.plotItem.vb.sceneBoundingRect().contains(pos):
+            p=view.plotItem.vb.mapSceneToView(pos);self.cursor=(float(p.x()),float(p.y()))
+        else:self.cursor=None
+    def points(self):
+        import math
+        result=[]
+        # Include loaded survey points as well as the full-rate live soundings.
+        for p in self.window.context['model'].points:
+            if p.easting is not None and p.northing is not None and p.corrected_depth is not None:
+                result.append((p.easting,p.northing,p.corrected_depth))
+        result.extend(self.window.live_soundings)
+        seen=set();clean=[]
+        for p in result:
+            p=tuple(float(v) for v in p)
+            if all(math.isfinite(v) for v in p) and p not in seen:seen.add(p);clean.append(p)
+        return clean
+    def selected(self,points):
+        import math,random
+        if self.mode=='Manual only':return []
+        if self.mode=='Random samples':
+            return [points[i] for i in sorted(random.Random(24).sample(range(len(points)),min(len(points),int(self.interval),self.maximum)))]
+        if self.mode=='Every N soundings':return points[::max(1,int(self.interval))]
+        selected=[];distance=0.0;previous=None
+        for p in points:
+            if previous is None:selected.append(p)
+            else:
+                distance+=math.hypot(p[0]-previous[0],p[1]-previous[1])
+                if distance>=self.interval:selected.append(p);distance=0.0
+            previous=p
+        return selected
+    def refresh(self,force=False):
+        points=self.points();bounds=self.window.view.viewRange()
+        signature=(len(points),points[-1] if points else None,tuple(tuple(x) for x in bounds),tuple(self.manual),self.enabled,self.mode,self.interval,self.decimals,self.font_size)
+        if not force and signature==self.signature:return
+        self.signature=signature
+        for item in self.items:self.window.view.removeItem(item)
+        self.items=[]
+        if not self.enabled:return
+        automatic=self.selected(points)
+        visible=lambda p:bounds[0][0]<=p[0]<=bounds[0][1] and bounds[1][0]<=p[1]<=bounds[1][1]
+        automatic=[p for p in automatic if visible(p) and p not in self.manual]
+        # Cap rendering only; all observations and manual choices remain stored.
+        limit=max(0,self.maximum-sum(visible(p) for p in self.manual))
+        clipped=len(automatic)>limit
+        automatic=automatic[:limit]
+        from PyQt6.QtGui import QFont
+        for p,manual in [(p,False) for p in automatic]+[(p,True) for p in self.manual if visible(p)]:
+            x,y,z=p;fmt=lambda v:f'{v:.{self.decimals}f}'
+            label=self.modern.pg.TextItem('X '+fmt(x)+'\nY '+fmt(y)+'\nZ '+fmt(z),color='#b45309' if manual else '#075985',anchor=(0,1),fill=(255,255,255,210))
+            label.setFont(QFont('Segoe UI',self.font_size));label.setPos(x,y);label.setZValue(100)
+            self.window.view.addItem(label,ignoreBounds=True);self.items.append(label)
+        if clipped:self.window.statusBar().showMessage('XYZ annotation display cap reached (500); increase interval or zoom in.')
+    def annotate(self):
+        points=self.points()
+        if not points:
+            self.window.statusBar().showMessage('F5: No positioned depth sounding is available.');return
+        bounds=self.window.view.viewRange()
+        visible=[p for p in points if bounds[0][0]<=p[0]<=bounds[0][1] and bounds[1][0]<=p[1]<=bounds[1][1]]
+        if not visible:
+            self.window.statusBar().showMessage('F5: No depth sounding in the visible map.');return
+        if self.cursor is None:
+            self.window.statusBar().showMessage('F5: Move the pointer over the map to choose a sounding.');return
+        x,y=self.cursor;p=min(visible,key=lambda p:(p[0]-x)**2+(p[1]-y)**2)
+        if p not in self.manual:self.manual.append(p)
+        self.enabled=True;self.refresh(True)
+        self.window.statusBar().showMessage(f'XYZ annotated: X {p[0]:.2f}, Y {p[1]:.2f}, Z {p[2]:.2f} m (corrected depth)')
+    def clear_manual(self):self.manual.clear();self.refresh(True)
+    def options(self):
+        from PyQt6 import QtWidgets as W
+        dialog=W.QDialog(self.window);dialog.setWindowTitle('XYZ annotation options');form=W.QFormLayout(dialog)
+        enabled=W.QCheckBox('Show XYZ annotations');enabled.setChecked(self.enabled);form.addRow(enabled)
+        mode=W.QComboBox();mode.addItems(['Distance','Every N soundings','Random samples','Manual only']);mode.setCurrentText(self.mode);form.addRow('Automatic annotation mode',mode)
+        interval=W.QDoubleSpinBox();interval.setRange(0.1,100000);interval.setDecimals(1);interval.setValue(self.interval);form.addRow('Interval / count',interval)
+        helptext=W.QLabel('Distance: spacing along the survey track in metres. Every N: sample interval.\nRandom: number of labels. Manual only: use F5 at any map position.\nF5 labels the nearest visible measured sounding to the pointer.\nX = Easting, Y = Northing, Z = corrected depth in metres, positive down.\nLabels are view overlays for this session; at most 500 automatic labels are shown.');helptext.setWordWrap(True);form.addRow(helptext)
+        decimals=W.QSpinBox();decimals.setRange(0,4);decimals.setValue(self.decimals);form.addRow('Decimal places',decimals)
+        size=W.QSpinBox();size.setRange(6,24);size.setValue(self.font_size);form.addRow('Font size',size)
+        buttons=W.QDialogButtonBox(W.QDialogButtonBox.StandardButton.Ok|W.QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons);buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+        if dialog.exec():
+            self.enabled=enabled.isChecked();self.mode=mode.currentText();self.interval=interval.value();self.decimals=decimals.value();self.font_size=size.value();self.refresh(True)
+
+
+class MapLoggingNotice:
+    """Non-modal notification anchored to the centre of the navigation map."""
+    def __init__(self,window):
+        from PyQt6 import QtCore as C,QtWidgets as W
+        self.window=window;self.parent=window.view.viewport()
+        self.box=W.QFrame(self.parent);self.box.setObjectName('mapLoggingNotice')
+        self.box.setAttribute(C.Qt.WidgetAttribute.WA_TransparentForMouseEvents,True)
+        layout=W.QVBoxLayout(self.box);layout.setContentsMargins(26,18,26,18)
+        self.title=W.QLabel();self.title.setAlignment(C.Qt.AlignmentFlag.AlignCenter)
+        self.details=W.QLabel();self.details.setAlignment(C.Qt.AlignmentFlag.AlignCenter)
+        self.keys=W.QLabel('Ctrl+S  START LOGGING     |     Ctrl+E  STOP / SAVE')
+        self.keys.setAlignment(C.Qt.AlignmentFlag.AlignCenter)
+        for label in (self.title,self.details,self.keys):
+            label.setWordWrap(True);label.setMinimumWidth(0);layout.addWidget(label)
+        self.box.hide();self.timer=C.QTimer(self.box);self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.box.hide)
+        notice=self
+        class Anchor(C.QObject):
+            def eventFilter(self,obj,event):
+                if event.type() in (C.QEvent.Type.Resize,C.QEvent.Type.Show):notice.centre()
+                return False
+        self.anchor=Anchor(self.box);self.parent.installEventFilter(self.anchor)
+    def centre(self):
+        self.box.setMaximumWidth(max(1,self.parent.width()-16))
+        self.box.layout().setContentsMargins(12,10,12,10)
+        if self.parent.height()<240:
+            self.title.setStyleSheet('font-size:18px;font-weight:800;color:#166534' if 'STARTED' in self.title.text() else 'font-size:18px;font-weight:800;color:#9a3412')
+            self.details.setStyleSheet('font-size:12px;color:#111827')
+            self.keys.setStyleSheet('font-size:11px;color:#334155')
+        self.box.adjustSize()
+        self.box.move(max(0,(self.parent.width()-self.box.width())//2),max(0,(self.parent.height()-self.box.height())//2))
+    def show_event(self,started):
+        colour='#166534' if started else '#9a3412'
+        self.title.setText('LOGGING STARTED' if started else 'LOGGING STOPPED / SAVED')
+        self.title.setStyleSheet('font-size:24px;font-weight:800;color:'+colour)
+        self.details.setText('Recording incoming sensor data' if started else 'Recording files closed and saved')
+        self.details.setStyleSheet('font-size:15px;color:#111827')
+        self.keys.setStyleSheet('font-size:13px;font-weight:600;color:#334155')
+        self.box.setStyleSheet('QFrame#mapLoggingNotice {background:rgba(255,255,255,242);border:3px solid '+colour+';border-radius:12px;} QLabel {background:transparent;border:0;}')
+        self.centre();self.box.show();self.box.raise_();self.timer.start(4000)
+
+
+class ResponsiveNavigationLayout:
+    """Keep the map inside the available screen; ancillary content yields space."""
+    def __init__(self,window):
+        from PyQt6 import QtCore as C,QtWidgets as W
+        self.window=window;self.busy=False;self.pending=False;self.connected=False
+        self.available_geometry=lambda:window.screen().availableGeometry()
+        ignored=W.QSizePolicy.Policy.Ignored;expanding=W.QSizePolicy.Policy.Expanding
+        window.setMinimumSize(0,0)
+        window.pages.setMinimumSize(0,0);window.pages.setSizePolicy(ignored,ignored)
+        page=window.pages.widget(0);page.setMinimumSize(0,0)
+        page.layout().setSizeConstraint(W.QLayout.SizeConstraint.SetNoConstraint)
+        window.view.setMinimumSize(0,0);window.view.setSizePolicy(expanding,expanding)
+        split=window.navigation_splitter;split.setMinimumSize(0,0)
+        split.setStretchFactor(0,0);split.setStretchFactor(1,1)
+        content=window.navigation_sidebar
+        content.setMinimumSize(0,0);content.layout().setContentsMargins(5,5,5,5)
+        for label in content.findChildren(W.QLabel):
+            label.setMinimumWidth(0);label.setWordWrap(True);label.setSizePolicy(ignored,W.QSizePolicy.Policy.Preferred)
+        for widget in (window.layer_list,window.event_log,window.crs_box):widget.setMinimumSize(0,0)
+        scroll=W.QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(W.QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMinimumSize(0,0);scroll.setSizePolicy(ignored,expanding)
+        split.replaceWidget(0,scroll);scroll.setWidget(content)
+        window.navigation_sidebar=scroll;self.scroll=scroll
+        for label in (window.gnss_status_label,window.sbes_status_label,window.logging_badge,
+                      window.coord_label,window.scale_label,window.mode_label,window.health_badge):
+            label.setMinimumWidth(0);label.setSizePolicy(ignored,W.QSizePolicy.Policy.Preferred)
+            label.setMaximumHeight(28)
+        window.status.setSizeGripEnabled(False)
+        window.menuBar().setMinimumWidth(0);window.menuBar().setSizePolicy(ignored,W.QSizePolicy.Policy.Fixed)
+        window.navigation_line.setMinimumWidth(60);window.navigation_line.setMaximumWidth(220)
+        window.navigation_line.setSizePolicy(ignored,W.QSizePolicy.Policy.Fixed)
+        for toolbar in window.findChildren(W.QToolBar):
+            toolbar.setMinimumWidth(0);toolbar.setSizePolicy(ignored,W.QSizePolicy.Policy.Fixed)
+            for button in toolbar.findChildren(W.QPushButton):
+                button.setMinimumSize(66,30);button.setStyleSheet('font-size:12px;font-weight:600;padding:4px 6px;')
+        # Guidance scrolls within a bounded band instead of increasing map/window height.
+        for dock in window.findChildren(W.QDockWidget):
+            if dock.widget() is window.guidance:
+                guidance_scroll=W.QScrollArea();guidance_scroll.setWidgetResizable(True)
+                guidance_scroll.setFrameShape(W.QFrame.Shape.NoFrame)
+                guidance_scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                window.guidance.setMinimumSize(0,0);window.guidance.setSizePolicy(ignored,W.QSizePolicy.Policy.Preferred)
+                dock.setWidget(guidance_scroll);guidance_scroll.setWidget(window.guidance)
+                dock.setMinimumSize(0,45);dock.setMaximumHeight(110)
+                self.guidance_dock=dock
+        owner=self
+        class Watch(C.QObject):
+            def eventFilter(self,obj,event):
+                if event.type() in (C.QEvent.Type.Show,C.QEvent.Type.Resize,C.QEvent.Type.WindowStateChange):owner.schedule()
+                return False
+        self.watch=Watch(window);window.installEventFilter(self.watch)
+        split.installEventFilter(self.watch)
+        self.timer=C.QTimer(window);self.timer.timeout.connect(self.tooltips);self.timer.start(1000)
+        self.apply()
+    def schedule(self):
+        from PyQt6 import QtCore as C
+        if self.pending or self.busy:return
+        self.pending=True;C.QTimer.singleShot(0,self.apply)
+    def tooltips(self):
+        for label in (self.window.gnss_status_label,self.window.sbes_status_label,self.window.health_badge,self.window.coord_label):
+            label.setToolTip(label.text())
+    def apply(self):
+        from PyQt6 import QtCore as C
+        self.pending=False
+        if self.busy:return
+        self.busy=True
+        try:
+            w=self.window;available=self.available_geometry();handle=w.windowHandle()
+            if handle is not None and not self.connected:
+                handle.screenChanged.connect(lambda *_:self.schedule());self.connected=True
+            # Honour taskbar and display scaling using Qt's logical-pixel work area.
+            margins=(max(0,w.frameGeometry().width()-w.width()),max(0,w.frameGeometry().height()-w.height()))
+            if not w.isMaximized() and not w.isFullScreen():
+                width=min(w.width(),max(1,available.width()-margins[0]));height=min(w.height(),max(1,available.height()-margins[1]))
+                if width!=w.width() or height!=w.height():w.resize(width,height)
+                frame=w.frameGeometry();x=max(available.left(),min(frame.left(),available.right()-frame.width()+1));y=max(available.top(),min(frame.top(),available.bottom()-frame.height()+1))
+                if x!=frame.left() or y!=frame.top():w.move(x,y)
+            split=w.navigation_splitter;total=max(1,split.width()-split.handleWidth())
+            limit=max(1,min(300,int(total*.27)));self.scroll.setMaximumWidth(limit)
+            w.view.setMinimumWidth(max(1,total-limit))
+            if not self.scroll.isHidden():
+                preferred=min(limit,max(100,getattr(w,'_sidebar_width',220)))
+                split.setSizes([preferred,max(1,total-preferred)])
+            w.health_badge.setMaximumWidth(max(100,min(260,w.width()//5)))
+            w.coord_label.setMaximumWidth(max(100,min(260,w.width()//4)))
+            if hasattr(self,'guidance_dock'):self.guidance_dock.setMaximumHeight(max(65,min(110,int(w.height()*.15))))
+            if hasattr(w,'_logging_notice'):w._logging_notice.centre()
+        finally:self.busy=False
+
+
+class SurveyWindowManager:
+    """Select and arrange this application's auxiliary survey windows."""
+    def __init__(self,owner):
+        from PyQt6 import QtWidgets as W,QtCore as C
+        self.owner=owner;self.dialog=None;self.rows={};self.saved={};self.auto=True;self.mode='Tile';self.active_layout=False;self.map_share=70
+        menu=owner.menuBar().addMenu('Windows')
+        for title,callback in [('Window manager / select windows',self.show),('Tile selected windows',lambda:self.arrange('Tile')),('Cascade selected windows',lambda:self.arrange('Cascade')),('Restore previous positions',self.restore),('Bring navigation map to front',lambda:(owner.show(),owner.raise_(),owner.activateWindow()))]:
+            action=menu.addAction(title);action.triggered.connect(callback)
+        self.auto_action=menu.addAction('Arrange logging windows automatically');self.auto_action.setCheckable(True);self.auto_action.setChecked(self.auto)
+        self.auto_action.toggled.connect(self.set_auto)
+        self.reflow_timer=C.QTimer(owner);self.reflow_timer.setSingleShot(True);self.reflow_timer.setInterval(200)
+        self.reflow_timer.timeout.connect(self.reflow)
+        self.screen_connections=set()
+        self.connect_screens()
+        W.QApplication.instance().screenAdded.connect(lambda *_:self.connect_screens())
+        C.QTimer.singleShot(0,self.connect_window_screen)
+    def connect_screens(self):
+        from PyQt6 import QtWidgets as W
+        for screen in W.QApplication.screens():
+            if id(screen) in self.screen_connections:continue
+            self.screen_connections.add(id(screen))
+            screen.availableGeometryChanged.connect(lambda *_:self.reflow_timer.start())
+    def connect_window_screen(self):
+        handle=self.owner.windowHandle()
+        if handle:handle.screenChanged.connect(lambda *_:self.reflow_timer.start())
+    def reflow(self):
+        if self.active_layout:self.arrange(self.mode,preserve_restore=True)
+    def set_auto(self,value):
+        self.auto=bool(value)
+        if self.dialog and hasattr(self,'auto_box'):
+            self.auto_box.blockSignals(True);self.auto_box.setChecked(self.auto);self.auto_box.blockSignals(False)
+    def windows(self):
+        from PyQt6 import QtWidgets as W,QtCore as C,sip
+        result=[]
+        for window in W.QApplication.topLevelWidgets():
+            if sip.isdeleted(window) or window is self.owner or window is self.dialog:continue
+            if not window.windowTitle() or window.isModal():continue
+            if window.windowType() not in (C.Qt.WindowType.Window,C.Qt.WindowType.Dialog,C.Qt.WindowType.Tool):continue
+            parent=window.parentWidget();owned=False
+            while parent is not None:
+                if parent is self.owner:owned=True;break
+                parent=parent.parentWidget()
+            if not owned or window.isHidden():continue
+            result.append(window)
+        return sorted(result,key=lambda w:(w.windowTitle().lower(),id(w)))
+    def refresh(self):
+        from PyQt6 import QtWidgets as W,QtCore as C
+        if not self.dialog:return
+        states={id(win):item.checkState() for item,win in self.rows.values()}
+        self.list.clear();self.rows={}
+        for win in self.windows():
+            item=W.QListWidgetItem(win.windowTitle());item.setFlags(item.flags()|C.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(states.get(id(win),C.Qt.CheckState.Checked));self.list.addItem(item);self.rows[id(win)]=(item,win)
+        self.summary.setText(f'{len(self.rows)} open survey windows. Select the windows to arrange.\nTile: separate cells. Cascade: overlapping windows with visible title bars.\nSmall cells use scrollbars so instrument controls remain accessible.')
+    def show(self):
+        from PyQt6 import QtWidgets as W,QtCore as C
+        if self.dialog:
+            self.refresh();self.dialog.show();self.dialog.raise_();self.dialog.activateWindow();return
+        d=W.QDialog(self.owner);d.setWindowTitle('Survey Windows Manager');d.setModal(False);d.resize(530,420)
+        self.dialog=d;layout=W.QVBoxLayout(d)
+        self.summary=W.QLabel();self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        self.list=W.QListWidget();layout.addWidget(self.list,1);self.list.itemDoubleClicked.connect(self.activate_item)
+        row=W.QHBoxLayout()
+        for title,fn in [('Select all',lambda:self.select_all(True)),('Select none',lambda:self.select_all(False)),('Refresh',self.refresh),('Activate selected',self.activate_selected)]:
+            b=W.QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
+        layout.addLayout(row)
+        required=W.QLabel('Navigation map: always visible in its own reserved area.')
+        required.setWordWrap(True);layout.addWidget(required)
+        row=W.QHBoxLayout();row.addWidget(W.QLabel('Navigation share of screen (%)'))
+        share=W.QSpinBox();share.setRange(60,85);share.setValue(self.map_share)
+        share.valueChanged.connect(lambda value:setattr(self,'map_share',value));row.addWidget(share);layout.addLayout(row)
+        self.auto_box=W.QCheckBox('Automatically arrange new logging windows');self.auto_box.setChecked(self.auto)
+        self.auto_box.toggled.connect(lambda value:(self.set_auto(value),self.auto_action.setChecked(value)));layout.addWidget(self.auto_box)
+        row=W.QHBoxLayout()
+        for title,fn in [('Tile',lambda:self.arrange('Tile')),('Cascade',lambda:self.arrange('Cascade')),('Restore',self.restore),('Close manager',d.hide)]:
+            b=W.QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
+        layout.addLayout(row)
+        timer=C.QTimer(d);timer.setInterval(1500)
+        timer.timeout.connect(self.refresh_if_changed);timer.start();self.timer=timer
+        self.refresh();d.show()
+    def refresh_if_changed(self):
+        if self.dialog and self.dialog.isVisible() and set(self.rows)!=set(map(id,self.windows())):self.refresh()
+    def select_all(self,value):
+        from PyQt6 import QtCore as C
+        for item,win in self.rows.values():item.setCheckState(C.Qt.CheckState.Checked if value else C.Qt.CheckState.Unchecked)
+    def targets(self,all_windows=False):
+        from PyQt6 import QtCore as C,sip
+        if all_windows or self.dialog is None:return self.windows()
+        return [win for item,win in self.rows.values() if item.checkState()==C.Qt.CheckState.Checked and not sip.isdeleted(win)]
+    def activate_item(self,item):
+        for row,win in self.rows.values():
+            if row is item:win.showNormal();win.raise_();win.activateWindow();return
+    def activate_selected(self):
+        wins=self.targets()
+        if wins:wins[0].showNormal();wins[0].raise_();wins[0].activateWindow()
+    def make_scrollable(self,window):
+        from PyQt6 import QtWidgets as W,QtCore as C
+        if window is self.owner or window.property('survey_manager_scrollable'):return
+        natural=window.size();minimum=window.minimumSize();hint=window.minimumSizeHint()
+        if isinstance(window,W.QMainWindow):content=window.takeCentralWidget()
+        else:
+            old=window.layout()
+            if old is None:return
+            content=W.QWidget();content.setLayout(old)
+            # The retained widget vocabulary continues to pack into the content.
+            window._window_manager_content=content
+        if content is None:return
+        content.setMinimumSize(max(200,minimum.width(),min(natural.width(),max(0,hint.width()))),max(120,minimum.height(),min(natural.height(),max(0,hint.height()))))
+        area=W.QScrollArea(window);area.setWidgetResizable(True);area.setFrameShape(W.QFrame.Shape.NoFrame);area.setWidget(content)
+        if isinstance(window,W.QMainWindow):window.setCentralWidget(area)
+        else:
+            outer=W.QVBoxLayout(window);outer.setContentsMargins(0,0,0,0);outer.addWidget(area)
+            outer.setSizeConstraint(W.QLayout.SizeConstraint.SetNoConstraint)
+        window.setMinimumSize(0,0);window.setMaximumSize(16777215,16777215)
+        window.setProperty('survey_manager_scrollable',True)
+    def arrange(self,mode='Tile',all_windows=False,preserve_restore=False):
+        import math
+        from PyQt6 import QtCore as C,QtWidgets as W
+        wins=self.targets(all_windows)
+        if not wins:
+            self.owner.statusBar().showMessage('Windows: no open survey windows selected.');return
+        self.mode=mode;screen=self.owner.screen().availableGeometry();gap=6
+        if not preserve_restore:self.saved={id(w):(w,C.QRect(w.geometry()),w.windowState()) for w in [self.owner]+wins}
+        self.active_layout=True
+        # Hide the manager while arranging so it cannot cover a selected window.
+        if self.dialog:self.dialog.hide()
+        for w in wins:self.make_scrollable(w);w.showNormal()
+        self.owner.showNormal()
+        W.QApplication.processEvents()
+        def place(w,x,y,width,height):
+            extra_w=max(0,w.frameGeometry().width()-w.width());extra_h=max(0,w.frameGeometry().height()-w.height())
+            w.resize(max(1,width-extra_w),max(1,height-extra_h));w.move(x,y);w.show();w.raise_()
+        # The map always occupies the left region; auxiliary windows never overlap it.
+        full=C.QRect(screen);map_width=int(full.width()*self.map_share/100)
+        place(self.owner,full.x()+gap//2,full.y()+gap//2,map_width-gap,full.height()-gap)
+        self.owner._responsive_navigation.apply()
+        screen=C.QRect(full.x()+map_width,full.y(),full.width()-map_width,full.height())
+        count=len(wins)
+        if mode=='Tile':
+            columns=max(1,math.ceil(math.sqrt(count*screen.width()/max(1,screen.height()))));columns=min(count,columns)
+            rows=math.ceil(count/columns)
+            for row in range(rows):
+                members=wins[row*columns:(row+1)*columns];n=len(members)
+                for col,w in enumerate(members):
+                    x=screen.x()+col*screen.width()//n;y=screen.y()+row*screen.height()//rows
+                    width=(col+1)*screen.width()//n-col*screen.width()//n
+                    height=(row+1)*screen.height()//rows-row*screen.height()//rows
+                    place(w,x+gap//2,y+gap//2,width-gap,height-gap)
+        else:
+            step=max(8,min(28,(screen.width()-200)//max(1,count),(screen.height()-150)//max(1,count)))
+            width=max(120,screen.width()-(count-1)*step-gap);height=max(100,screen.height()-(count-1)*step-gap)
+            for i,w in enumerate(wins):place(w,screen.x()+gap//2+i*step,screen.y()+gap//2+i*step,width,height)
+        self.owner.statusBar().showMessage(f'{mode}: navigation map reserved; {count} selected windows fitted beside it.')
+    def restore(self):
+        from PyQt6 import sip
+        self.active_layout=False
+        for win,geometry,state in self.saved.values():
+            if not sip.isdeleted(win):win.showNormal();win.setGeometry(geometry);win.setWindowState(state)
+        self.owner.statusBar().showMessage('Previous window positions restored.')
+    def logging_started(self):
+        from PyQt6 import QtCore as C
+        if self.dialog:self.refresh()
+        if self.auto:C.QTimer.singleShot(200,lambda:self.arrange(self.mode,True))
+
+
 
 if __name__=='__main__':
     raise SystemExit(main())
