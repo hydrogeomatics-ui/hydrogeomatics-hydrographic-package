@@ -265,10 +265,143 @@ def project_xy(lat,lon,g):
     return _TRANSFORMS[key].transform(lon,lat,errcheck=True)
 _TRANSFORMS={}
 
+# 24OCT2026: local adaptive robust estimation. No network/model dependency.
+from collections import deque
+from statistics import median
+
+FILTER_DEFAULTS = dict(enabled=True, depth_gate_m=0.75, gnss_gate_m=3.0,
+                       height_gate_m=0.50, sigma=6.0, smoothing=0.70,
+                       max_speed_mps=20.0, reset_gap_s=10.0)
+
+class AdaptiveChannel:
+    """Causal robust predictor; rejected values never enter its noise history."""
+    def __init__(self, floor, config, dimensions=1, confirm=False):
+        self.floor=floor; self.config=config; self.dimensions=dimensions; self.confirm=confirm
+        self.state=None; self.last_t=None; self.raw=None
+        self.velocity=(0.0,)*dimensions; self.errors=deque(maxlen=31)
+        self.candidates=deque(maxlen=3); self.last_result=None
+    @staticmethod
+    def norm(v):return math.sqrt(sum(x*x for x in v))
+    def update(self, values, t):
+        v=tuple(float(x) for x in values)
+        if not all(math.isfinite(x) for x in v):return None,'invalid'
+        if self.last_t is not None and t < self.last_t:return self.state,'out_of_order_hold'
+        if self.last_t is not None and t == self.last_t:
+            return self.state,'same_epoch_hold'
+        if self.state is None or t-self.last_t > self.config['reset_gap_s']:
+            self.state=self.raw=v;self.last_t=t;self.velocity=(0.0,)*len(v)
+            self.errors.clear();self.candidates.clear()
+            return v,'initialize_or_gap_reset'
+        dt=max(0.02,t-self.last_t)
+        prediction=tuple(x+rate*min(dt,2.0) for x,rate in zip(self.state,self.velocity))
+        error=self.norm(tuple(x-y for x,y in zip(v,prediction)))
+        noise=median(self.errors) if self.errors else 0.0
+        mad=median([abs(x-noise) for x in self.errors]) if self.errors else 0.0
+        gate=max(self.floor,noise+self.config['sigma']*1.4826*mad)
+        jump=self.norm(tuple(x-y for x,y in zip(v,self.raw)))
+        impossible=self.dimensions==2 and jump>self.config['max_speed_mps']*dt+self.floor
+        if error>gate or impossible:
+            self.candidates.append((t,v))
+            # Depth/height steps require three mutually consistent observations.
+            # Position reacquires only after a gap; repeated teleports stay rejected.
+            if self.confirm and len(self.candidates)==3:
+                vals=[x[1][0] for x in self.candidates]
+                if max(vals)-min(vals)<=self.floor:
+                    self.state=self.raw=v;self.last_t=t;self.velocity=(0.0,)*len(v)
+                    self.errors.clear();self.candidates.clear()
+                    return v,'confirmed_step'
+            return self.state,'spike_hold'
+        self.candidates.clear();self.errors.append(error)
+        alpha=self.config['smoothing']
+        result=tuple(p+alpha*(x-p) for p,x in zip(prediction,v))
+        observed=tuple((x-y)/dt for x,y in zip(v,self.raw))
+        self.velocity=tuple(0.75*a+0.25*b for a,b in zip(self.velocity,observed))
+        self.state=result;self.raw=v;self.last_t=t
+        return result,'smoothed'
+
+class IntelligentInputFilter:
+    """Independent depth, horizontal GNSS and height estimators per sensor stream.
+
+    Self-adapts to recent residuals; this is statistical estimation, not an LLM.
+    Original bytes and messages remain authoritative and are never overwritten.
+    """
+    def __init__(self, config=None):
+        self.config=dict(FILTER_DEFAULTS if config is None else config)
+        self.streams={};self.counts={}
+    def apply(self, name, when, point):
+        if point is None:return None,None
+        original=copy.deepcopy(vars(point));p=copy.copy(point);decisions={}
+        if not self.config['enabled']:return p,dict(original=original,filtered=vars(p).copy(),decisions={'filter':'disabled'})
+        # Sentence measurement time deduplicates GGA/RMC/GLL from one GNSS epoch.
+        epoch=when.timestamp()
+        try:
+            if p.time:
+                tod=seconds_of_day(p.time)
+                if not 0<=tod<86400:raise ValueError('time')
+                midnight=when.replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
+                candidate=midnight+tod
+                epoch=min((candidate-86400,candidate,candidate+86400),key=lambda x:abs(x-when.timestamp()))
+        except (ValueError,TypeError):pass
+        stream=self.streams.setdefault(name,{})
+        def channel(key,floor,dim=1,confirm=False):
+            if key not in stream:stream[key]=AdaptiveChannel(floor,self.config,dim,confirm)
+            return stream[key]
+        if p.raw_depth is not None:
+            if finite(p.raw_depth) is None or p.raw_depth<=0:
+                previous=stream.get('depth');p.raw_depth=previous.state[0] if previous and previous.state else None
+                decisions['depth']='invalid_depth_hold' if p.raw_depth is not None else 'invalid_depth_no_estimate'
+            else:
+                value,reason=channel('depth',self.config['depth_gate_m'],confirm=True).update((p.raw_depth,),when.timestamp())
+                p.raw_depth=value[0] if value else None;decisions['depth']=reason
+        if p.latitude is not None and p.longitude is not None:
+            if not (finite(p.latitude) is not None and finite(p.longitude) is not None and abs(p.latitude)<=90 and abs(p.longitude)<=180):
+                p.latitude=p.longitude=p.easting=p.northing=None;decisions['gnss']='invalid_coordinate'
+            else:
+                origin=stream.setdefault('origin',(p.latitude,p.longitude))
+                scale=max(1e-8,math.cos(math.radians(origin[0])));radius=6371008.8
+                delta=(p.longitude-origin[1]+180)%360-180
+                xy=(radius*math.radians(delta)*scale,radius*math.radians(p.latitude-origin[0]))
+                value,reason=channel('position',self.config['gnss_gate_m'],2).update(xy,epoch)
+                p.latitude=origin[0]+math.degrees(value[1]/radius)
+                p.longitude=(origin[1]+math.degrees(value[0]/(radius*scale))+180)%360-180
+                p.easting=p.northing=None;decisions['gnss']=reason
+        elif p.easting is not None and p.northing is not None:
+            value,reason=channel('grid',self.config['gnss_gate_m'],2).update((p.easting,p.northing),epoch)
+            p.easting,p.northing=value if value else (None,None);decisions['gnss']=reason
+        if p.altitude_m is not None:
+            value,reason=channel('height',self.config['height_gate_m'],confirm=True).update((p.altitude_m,),epoch)
+            p.altitude_m=value[0] if value else None;decisions['height']=reason
+        # Never carry a reduction calculated from the unfiltered observation.
+        if decisions:p.rtk_reduced_depth=p.rtk_reduced_height=p.ktd_cell_k=None
+        for key,reason in decisions.items():
+            label=key+':'+reason;self.counts[label]=self.counts.get(label,0)+1
+        return p,dict(original=original,filtered=vars(p).copy(),decisions=decisions)
+
+def show_filter_settings(window, acquisition):
+    from PyQt6 import QtWidgets as W
+    if acquisition.writer:
+        W.QMessageBox.information(window,'Input filtering','Stop recording before changing filter settings.');return
+    dialog=W.QDialog(window);dialog.setWindowTitle('Intelligent depth and GNSS input filtering')
+    layout=W.QFormLayout(dialog);fields={}
+    enabled=W.QCheckBox('Enable adaptive filtering');enabled.setChecked(acquisition.filter_config['enabled']);layout.addRow(enabled)
+    for key,label,lo,hi in [('depth_gate_m','Minimum depth spike gate (m)',0.01,1000),('gnss_gate_m','Minimum horizontal GNSS gate (m)',0.01,1000),('height_gate_m','Minimum GNSS height gate (m)',0.01,1000),('sigma','Noise threshold multiplier',2,20),('smoothing','Response (lower = smoother)',0.05,1),('max_speed_mps','Maximum vessel speed (m/s)',0.1,100),('reset_gap_s','Reacquire after data gap (s)',1,300)]:
+        field=W.QDoubleSpinBox();field.setRange(lo,hi);field.setDecimals(2);field.setValue(acquisition.filter_config[key]);fields[key]=field;layout.addRow(label,field)
+    note=W.QLabel('RAW POS/EC1/height observations are filtered. Original MSG records and incoming byte logs are retained.\nEvery parsed observation has an original/filtered audit entry. No samples are decimated.\nThree consistent depth/height outliers confirm a real step; GNSS reacquires after a gap.\nInitial values and sustained faults can still require review. Settings persist beside this script.')
+    note.setWordWrap(True);layout.addRow(note)
+    buttons=W.QDialogButtonBox(W.QDialogButtonBox.StandardButton.Ok|W.QDialogButtonBox.StandardButton.Cancel);layout.addRow(buttons)
+    buttons.accepted.connect(dialog.accept);buttons.rejected.connect(dialog.reject)
+    if dialog.exec():
+        config=dict(enabled=enabled.isChecked(),**{key:field.value() for key,field in fields.items()})
+        try:atomic_json(Path(__file__).with_name('24OCT2026_filter_settings.json'),config)
+        except OSError as exc:W.QMessageBox.warning(window,'Settings could not be saved',str(exc));return
+        acquisition.filter_config=config;acquisition.input_filter=IntelligentInputFilter(config)
+
+
 class HypackWriter:
     """Incremental HYPACK ASCII records; raw source messages use MSG, not RAW.
 
-    POS/EC1/GYR/RAW retain acquisition values. Reductions are post-processing.
+    POS/EC1/RAW use adaptive filtered values during live acquisition.
+    MSG and incoming.jsonl preserve original observations. GYR is unchanged.
     Time tags are UTC seconds since midnight; a new file is opened each UTC day.
     """
     def __init__(self,path,geodetic,devices,when=None,draft=0.0):
@@ -416,6 +549,15 @@ class Acquisition:
         self.session_path=None;self.session=None;self.last_checkpoint=0.0;self.last_received=None
         self.metrics={'received':0,'recorded':0,'invalid_checksum':0,'incomplete':0,'unparsed':0}
         self.last_error='';self.metadata_error=''
+        self.filter_config=dict(FILTER_DEFAULTS)
+        try:
+            saved=json.loads(Path(__file__).with_name('24OCT2026_filter_settings.json').read_text(encoding='utf8'))
+            for key,value in saved.items():
+                if key=='enabled' and isinstance(value,bool):self.filter_config[key]=value
+                elif key in FILTER_DEFAULTS and key!='enabled' and finite(value) is not None and float(value)>0:self.filter_config[key]=float(value)
+            self.filter_config['smoothing']=min(1.0,max(0.05,self.filter_config['smoothing']))
+        except (OSError,ValueError,TypeError,AttributeError):pass
+        self.input_filter=IntelligentInputFilter(self.filter_config);self.filter_handle=None
         self.sensor_events=queue.Queue();self.incoming_handle=None;self.event_handle=None;self.event_second=None;self.event_point=None;self.event_count=0
     def attach(self,ctx):self.ctx=ctx
     def checkpoint(self,force=False):
@@ -423,11 +565,11 @@ class Acquisition:
         if not force and time.monotonic()-self.last_checkpoint<5:return
         self.last_checkpoint=time.monotonic()
         try:
-            for handle in (self.incoming_handle,self.event_handle):
+            for handle in (self.incoming_handle,self.event_handle,self.filter_handle):
                 if handle:handle.flush();os.fsync(handle.fileno())
             if self.writer and self.writer.handle and not self.writer.handle.closed:
                 self.writer.handle.flush();os.fsync(self.writer.handle.fileno())
-            self.session.update(updated_utc=datetime.now(timezone.utc).isoformat(),metrics=dict(self.metrics),pending_records=self.queue.qsize(),last_error=self.last_error)
+            self.session.update(updated_utc=datetime.now(timezone.utc).isoformat(),metrics=dict(self.metrics),filter_counts=dict(self.input_filter.counts),pending_records=self.queue.qsize(),last_error=self.last_error)
             existing={f['name']:f for f in self.session.get('files',[])}
             self.session['files']=[dict(existing.get(p.name,{}),name=p.name,bytes=p.stat().st_size if p.exists() else 0) for p in self.paths]
             atomic_json(self.session_path,self.session);self.metadata_error=''
@@ -471,22 +613,26 @@ class Acquisition:
         self.writer=HypackWriter(unique_raw_path(c['settings'].raw_folder),g,names);self.paths=[self.writer.path]
         self.metrics=dict.fromkeys(self.metrics,0);self.last_received=None;self.last_error='';self.metadata_error=''
         self.event_second=None;self.event_point=None;self.event_count=0
+        self.input_filter=IntelligentInputFilter(self.filter_config)
         try:
-            for suffix,attribute in (('.incoming.jsonl','incoming_handle'),('.events.jsonl','event_handle')):
+            for suffix,attribute in (('.incoming.jsonl','incoming_handle'),('.events.jsonl','event_handle'),('.filter.jsonl','filter_handle')):
                 path=self.writer.path.with_suffix(suffix)
                 setattr(self,attribute,path.open('x',encoding='utf8'));self.paths.append(path)
         except Exception:
             self.writer.close();self.writer=None;self.close_sidecars();raise
         self.session_path=self.writer.path.with_suffix('.session.json')
         self.session={'version':1,'application':'HYDROGEOMATICS','status':'recording','started_utc':self.writer.when.isoformat(),
-                      'survey_event_interval_s':1.0,'raw_policy':'all incoming data; no decimation','settings':copy.deepcopy(c['settings'].to_dict()),'corrections':{'tide':c['model'].tide,'draft':c['model'].draft,'sound_speed':c['model'].sound_speed},'files':[]}
+                      'survey_event_interval_s':1.0,'raw_policy':'filtered typed observations; original MSG and incoming bytes retained; no decimation','input_filter':dict(self.filter_config),'filter_algorithm':'adaptive robust predictor v1; local statistical estimation','settings':copy.deepcopy(c['settings'].to_dict()),'corrections':{'tide':c['model'].tide,'draft':c['model'].draft,'sound_speed':c['model'].sound_speed},'files':[]}
         self.checkpoint(force=True)
         c['live_raw_records'].clear();c['live_echogram_points'].clear();self.live_track.clear();self.live_depth.clear();self.last_position_time=None;self.last_xy=None
-        c['logging_active'].set(True);c['logging_started_at'].set(datetime.now(timezone.utc).strftime('%H:%M:%S UTC'));c['status_var'].set('Recording HYPACK RAW: '+str(self.writer.path))
+        c['logging_active'].set(True);c['logging_started_at'].set(datetime.now(timezone.utc).strftime('%H:%M:%S UTC'));c['status_var'].set('Recording filtered RAW + original bytes/MSG + filter audit: '+str(self.writer.path))
         c['show_io_monitor'](auto_start=True);c['show_data_display']();c['show_live_echogram_display'](auto=True)
         if self.new_window:self.new_window.show_accuracy_monitor()
+        if self.new_window and hasattr(self.new_window,'_logging_notice'):self.new_window._logging_notice.show_event(True)
+        if self.new_window and hasattr(self.new_window,'_window_manager'):self.new_window._window_manager.logging_started()
         return 'break'
     def stop(self,*args):
+        was_recording=self.writer is not None
         c=self.ctx;c['io_monitor_stop_event'].set()
         for t in list(c['io_monitor_threads']):t.join(timeout=1.5)
         while not self.queue.empty():self.drain()
@@ -504,9 +650,10 @@ class Acquisition:
         self.finish_session('error' if self.last_error else 'complete')
         c['autosave_echogram']('stop_logging');c['close_auto_echogram_display']()
         c['status_var'].set(('Recording error: '+self.last_error) if self.last_error else 'Saved HYPACK RAW: '+'; '.join(str(p) for p in self.paths))
+        if was_recording and not self.last_error and self.new_window and hasattr(self.new_window,'_logging_notice'):self.new_window._logging_notice.show_event(False)
         return 'break'
     def close_sidecars(self):
-        for attribute in ('incoming_handle','event_handle'):
+        for attribute in ('incoming_handle','event_handle','filter_handle'):
             handle=getattr(self,attribute)
             if handle:
                 try:handle.flush();os.fsync(handle.fileno())
@@ -620,6 +767,10 @@ class Acquisition:
                 old=self.writer;old.close();self.writer=HypackWriter(unique_raw_path(old.path.parent),old.geodetic,old.devices,when);self.paths.append(self.writer.path)
             p=safe_observation(text) if complete else None
             if p is None:self.metrics['unparsed']+=1
+            p,audit=self.input_filter.apply(name,when,p)
+            if audit is not None and self.filter_handle:
+                audit.update(utc=when.isoformat(),source=name,record=self.metrics['received'])
+                self.filter_handle.write(json.dumps(audit,default=str,allow_nan=False)+'\n');self.filter_handle.flush()
             if self.writer:
                 try:self.writer.record(name,when,text,p);self.metrics['recorded']+=1
                 except Exception as exc:
@@ -663,9 +814,11 @@ class Acquisition:
         if self.writer:self.checkpoint()
     def export_records(self,path,records):
         temp=unique_raw_path(Path(path).parent,'.export');names=list(dict.fromkeys(r[0] for r in records));writer=HypackWriter(temp,self.ctx['settings'].geodetic,names)
+        input_filter=IntelligentInputFilter(self.filter_config)
         try:
             for name,stamp,text in records:
-                s=seconds_of_day(stamp);when=datetime.now(timezone.utc).replace(hour=int(s//3600),minute=int(s%3600//60),second=int(s%60),microsecond=int(s%1*1e6));writer.record(name,when,text)
+                s=seconds_of_day(stamp);when=datetime.now(timezone.utc).replace(hour=int(s//3600),minute=int(s%3600//60),second=int(s%60),microsecond=int(s%1*1e6))
+                point,_=input_filter.apply(name,when,safe_observation(text));writer.record(name,when,text,point)
             writer.close();os.replace(temp,path)
         except Exception:writer.close();temp.unlink(missing_ok=True);raise
         return len(records)

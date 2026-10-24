@@ -1,12 +1,14 @@
 """Check the exact Git index before commit/push. No third-party dependencies."""
 import ast
+import hashlib
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SINGLE_FILE = 'Hydrogeomatics version 22 OCT 2026.py'
+SINGLE_FILE = '24OCT2026.py'
+ARCHIVED_SINGLE_FILES = {'Hydrogeomatics version 22 OCT 2026.py': 'ff8a4fcd71ae5c7af79133b57e02bd4722e175859f61dcf0cb668c1ff3923221'}
 SOURCE_MODULES = {
     'QT_WIDGET_SOURCE': 'modules/qt_widget_source.py',
     'SURVEY_SOURCE': 'modules/survey_source.py',
@@ -21,14 +23,14 @@ SOURCE_MODULES = {
 ALLOWED = {
     '.gitignore', '.gitattributes', 'README.md', 'SECURITY.md', 'requirements.txt',
     'hydrographic_package.py', 'scripts/check_publication.py',
-    'start_windows.cmd', 'tests/test_source_bundle.py', 'tests/test_single_file.py', SINGLE_FILE,
+    'start_windows.cmd', 'tests/test_input_filter.py', 'tests/test_source_bundle.py', 'tests/test_single_file.py', SINGLE_FILE,
     'LICENSE', 'CONTRIBUTING.md', 'THIRD_PARTY_NOTICES.md',
     '.github/PULL_REQUEST_TEMPLATE.md',
     '.github/ISSUE_TEMPLATE/bug_report.yml',
     '.github/ISSUE_TEMPLATE/feature_request.yml',
     '.githooks/pre-commit', '.githooks/pre-push',
     '.github/workflows/security.yml',
-} | {f'modules/{name}.py' for name in (
+} | set(ARCHIVED_SINGLE_FILES) | {f'modules/{name}.py' for name in (
     'qt_widget_source', 'survey_source', 'map_source', 'engine_source',
     'indus_ktd_source', 'chart_plot_source', 'enc_editor_source',
     'dredge_volume_source', 'hydro_tide_payload',
@@ -69,12 +71,12 @@ def single_file_source(files):
     if found != set(SOURCE_MODULES):
         raise ValueError('Launcher source module assignments changed; review the builder.')
     doc = ast.parse(source).body[0]
-    documentation = '''HYDROGEOMATICS - version 22 OCT 2026, public single-file edition.
+    documentation = '''HYDROGEOMATICS - version 24 OCT 2026, public single-file edition.
 
 Contains the reviewed public application code; no separate modules folder is needed.
 Python 3.10+ and the packages in requirements.txt are still required.
 Install: python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
-Run: python "Hydrogeomatics version 22 OCT 2026.py"
+Run: python "24OCT2026.py"
 Project code: MIT License. Dependencies retain their own licenses.
 Embedded private/reference datasets are excluded. Indus reference-data and tide/astronomy features remain disabled in this public edition.
 Contribute: https://github.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package
@@ -122,7 +124,9 @@ def main():
         try:
             text = data.decode('utf-8-sig')
             indexed_text[name] = text
-            if name != SINGLE_FILE:
+            if name in ARCHIVED_SINGLE_FILES:
+                if hashlib.sha256(data).hexdigest() != ARCHIVED_SINGLE_FILES[name]:issues.append(f'{name}: archived release was modified')
+            elif name != SINGLE_FILE:
                 issues.extend(check_text(name, text))
         except UnicodeDecodeError:
             issues.append(f'{name}: binary content is not approved')

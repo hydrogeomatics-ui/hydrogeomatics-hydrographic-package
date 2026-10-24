@@ -39,6 +39,21 @@ Embedded geographic reference datasets and protected map resources are excluded 
 
 ## Get started
 
+### Latest single-file download: 24 OCT 2026
+
+**[Download 24OCT2026.py](https://raw.githubusercontent.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/main/24OCT2026.py)**. Save the link as a Python file and install the dependencies listed below.
+
+This release adds local adaptive depth/GNSS spike filtering and smoothing, original incoming-byte and MSG preservation, and original/filtered audit logs. It uses statistical estimation without an online AI service. Filter thresholds are adjustable; initial observations and sustained sensor faults still require review.
+
+XYZ map labels support distance/sample intervals, random samples, and F5 for the nearest visible sounding at the pointer. Ctrl+S starts logging; Ctrl+E stops and saves, with centred map notifications. Responsive layouts keep the navigation map visible. The Windows menu selects auxiliary windows and tiles/cascades them beside a mandatory map area (70% by default, adjustable from 60% to 85%). Automatic arrangement is enabled on logging start.
+
+```sh
+python -m pip install -r requirements.txt
+python 24OCT2026.py
+```
+
+Original incoming bytes are preserved in `.incoming.jsonl`, original messages in RAW MSG records, and original/filtered observations in `.filter.jsonl`. RAW typed observations are filtered without sample decimation. Settings and recordings stay local and are not bundled. Existing exclusions for embedded reference datasets, Indus reference-data and tide/astronomy features also apply to this public edition.
+
 ### Single-file download: version 22 OCT 2026
 
 **[Download Hydrogeomatics version 22 OCT 2026.py](https://raw.githubusercontent.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/main/Hydrogeomatics%20version%2022%20OCT%202026.py)** (save the linked content as a `.py` file).
