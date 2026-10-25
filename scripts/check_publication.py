@@ -74,6 +74,7 @@ def single_file_source(files):
     documentation = '''HYDROGEOMATICS - version 24 OCT 2026, public single-file edition.
 
 Contains the reviewed public application code; no separate modules folder is needed.
+Source metadata refreshed 25 October 2026. The complete Desktop edition uses existing uploaded-constituent descriptions; this public edition retains its reference-data exclusions.
 Python 3.10+ and the packages in requirements.txt are still required.
 Install: python -m pip install PyQt6 pyqtgraph numpy pyserial pyproj ezdxf matplotlib utide sonarlight pandas
 Run: python "24OCT2026.py"

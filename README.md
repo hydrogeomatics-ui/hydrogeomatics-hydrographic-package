@@ -39,9 +39,11 @@ Embedded geographic reference datasets and protected map resources are excluded 
 
 ## Get started
 
-### Latest single-file download: 24 OCT 2026
+### Latest single-file download: 24 OCT 2026 (source refresh 25 October)
 
 **[Download 24OCT2026.py](https://raw.githubusercontent.com/hydrogeomatics-ui/hydrogeomatics-hydrographic-package/main/24OCT2026.py)**. Save the link as a Python file and install the dependencies listed below.
+
+The complete Desktop source was refreshed on 25 October 2026 so tide descriptions refer to existing uploaded constituents. The 5,072 stations and 130,097 constituent rows were retained. Those reference datasets remain excluded from this public edition; its metadata has been refreshed to identify the update. Windows executables remain the 24 October builds.
 
 This release adds local adaptive depth/GNSS spike filtering and smoothing, original incoming-byte and MSG preservation, and original/filtered audit logs. It uses statistical estimation without an online AI service. Filter thresholds are adjustable; initial observations and sustained sensor faults still require review.
 
